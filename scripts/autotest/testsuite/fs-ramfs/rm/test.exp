@@ -30,8 +30,8 @@ TEST_CASE {Create and remove a single directory} {
 	test_expect_strings $embox_prompt
 
 	exec sleep 1
-	#send "ls\r"
-	#test_unexpect_strings_timeout 2 "dir1"
+	send "ls\r"
+	test_unexpect_strings_timeout 2 "dir1"
 }
 
 TEST_CASE {Create and remove multiple files} {
