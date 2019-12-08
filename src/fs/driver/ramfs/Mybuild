@@ -8,10 +8,7 @@ abstract module ramfs {
 }
 
 module ramfs_old extends ramfs {
-	@IncludeExport(path="fs")
-	source "ramfs.h"
-
-	source "ramfs.c"
+	source "ramfs_oldfs.c"
 
 	depends embox.mem.pool
 
@@ -20,7 +17,6 @@ module ramfs_old extends ramfs {
 
 	depends embox.driver.ramdisk
 }
-
 
 module ramfs_dvfs extends ramfs {
 	source "ramfs_dvfs.c"
