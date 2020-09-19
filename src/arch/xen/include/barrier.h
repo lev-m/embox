@@ -22,3 +22,15 @@
 #else
 #error "Define barriers"
 #endif
+
+static inline void xen_mb() {
+	mb();
+}
+
+static inline void xen_rmb() {
+	rmb();
+}
+
+static inline void xen_wmb() {
+	wmb();
+}
