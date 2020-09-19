@@ -8,15 +8,19 @@ end
 Vagrant.configure("2") do |config|
 
   config.vm.define "xen", autostart: false do |xen|
+    xen.vm.provider "virtualbox" do |v|
+      v.cpus = 2
+    end
+
     xen.vm.box = "ubuntu/bionic64"
 
     xen.vm.provision "shell", inline: <<-SHELL
     DEBIAN_FRONTEND=noninteractive \
-	  apt-get -y update
+    apt-get -y update
     DEBIAN_FRONTEND=noninteractive \
-	  apt-get -y install \
-		  xen-hypervisor-amd64
-
+    apt-get -y install \
+      xen-hypervisor-amd64
+    
     echo "cd /embox" >> /home/vagrant/.bashrc
     echo "export PATH=$PATH:/usr/lib/xen-4.9/bin" >> /home/vagrant/.bashrc
     SHELL
@@ -24,7 +28,8 @@ Vagrant.configure("2") do |config|
     xen.vm.provision :reload
 
     xen.vm.synced_folder ".", "/embox", type: "rsync",
-	    rsync__exclude: ".git/"
+      rsync__exclude: [".git/", "build/"]
+    xen.vm.synced_folder "build/base/bin", "/embox/build/base/bin", type: "rsync"
 
   end
 
