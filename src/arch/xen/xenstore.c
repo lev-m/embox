@@ -1,10 +1,16 @@
-#include "xenstore.h"
-#include <xen/event_channel.h>
-#include <xen/sched.h>
-#include <barrier.h>
+
 #include <string.h>
+#include <stdint.h>
+
+#include <xen/sched.h>
+#include <xen/io/xs_wire.h>
+
+#include <xen_drv.h>
+
 #include <kernel/printk.h>
 #include <embox/unit.h>
+
+EMBOX_UNIT_INIT(xenstore_init);
 
 static evtchn_port_t xenstore_evt;
 extern char _text_vma;
@@ -14,19 +20,19 @@ static struct xenstore_domain_interface *xenstore;
 static int req_id = 0;
 
 /* Initialise the XenStore */
-int xenstore_init(start_info_t *start) {
+static int xenstore_init(void) {
 	xenstore = (struct xenstore_domain_interface *)
-			((machine_to_phys_mapping[start->store_mfn] << 12)
+			((machine_to_phys_mapping[xen_start_info.store_mfn] << 12)
 			 +
 			((unsigned long) &_text_vma));
-	xenstore_evt = start->store_evtchn;
+	xenstore_evt = xen_start_info.store_evtchn;
 	/* TODO: Set up the event channel */
 
 	return 0;
 }
 
 /* Write a request to the back end */
-static int xenstore_write_request(char *message, int length) {
+static int xenstore_write_request(const char *message, int length) {
 	/* Check that the message will fit */
 	if (length > XENSTORE_RING_SIZE)
 	{
@@ -76,13 +82,6 @@ static int xenstore_read_response(char *message, int length) {
 	return 0;
 }
 
-#define NOTIFY() \
-	do { \
-		struct evtchn_send event; \
-		event.port = xenstore_evt; \
-		HYPERVISOR_event_channel_op(EVTCHNOP_send, &event); \
-	} while (0)
-
 #define IGNORE(n) \
 	do { \
 		char buffer[XENSTORE_RING_SIZE]; \
@@ -90,7 +89,7 @@ static int xenstore_read_response(char *message, int length) {
 	} while (0)
 
 /* Write a key/value pair to the XenStore */
-int xenstore_write(char *key, char *value) {
+int xenstore_write(const char *key, char *value) {
 	int key_length = strlen(key);
 	int value_length = strlen(value);
 	struct xsd_sockmsg msg;
@@ -103,7 +102,7 @@ int xenstore_write(char *key, char *value) {
 	xenstore_write_request(key, key_length + 1);
 	xenstore_write_request(value, value_length + 1);
 	/* Notify the back end */
-	NOTIFY();
+	evtchn_notify_remote(xenstore_evt);
 	xenstore_read_response((char *) &msg, sizeof(msg));
 	IGNORE(msg.len);
 	if (msg.req_id != req_id++)
@@ -114,7 +113,7 @@ int xenstore_write(char *key, char *value) {
 }
 
 /* Read a value from the store */
-int xenstore_read(char *key, char *value, int value_length) {
+int xenstore_read(const char *key, char *value, int value_length) {
 	int key_length = strlen(key);
 	struct xsd_sockmsg msg;
 	msg.type = XS_READ;
@@ -125,7 +124,7 @@ int xenstore_read(char *key, char *value, int value_length) {
 	xenstore_write_request((char *) &msg, sizeof(msg));
 	xenstore_write_request(key, key_length + 1);
 	/* Notify the back end */
-	NOTIFY();
+	evtchn_notify_remote(xenstore_evt);
 	xenstore_read_response((char *) &msg, sizeof(msg));
 	if (msg.req_id != req_id++)
 	{
@@ -144,7 +143,7 @@ int xenstore_read(char *key, char *value, int value_length) {
 	return -2;
 }
 
-int xenstore_ls(char *key, char *values, int value_length) {
+int xenstore_ls(const char *key, char *values, int value_length) {
 	int key_length = strlen(key);
 	struct xsd_sockmsg msg;
 	msg.type = XS_DIRECTORY;
@@ -155,7 +154,7 @@ int xenstore_ls(char *key, char *values, int value_length) {
 	xenstore_write_request((char *) &msg, sizeof(msg));
 	xenstore_write_request(key, key_length + 1);
 	/* Notify the back end */
-	NOTIFY();
+	evtchn_notify_remote(xenstore_evt);
 	xenstore_read_response((char *) &msg, sizeof(msg));
 	if (msg.req_id != req_id++)
 	{
