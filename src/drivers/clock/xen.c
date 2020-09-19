@@ -62,6 +62,7 @@ static irq_return_t clock_handler(unsigned int irq_nr, void *dev_id) {
 	for (int i = 0; i < n; i++) {
 		clock_tick_handler(dev_id);
 	}
+	system_time = time;
 
 	return IRQ_HANDLED;
 }
