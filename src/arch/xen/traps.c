@@ -1,24 +1,9 @@
 
-#include <stdint.h>
-#include <xen/xen.h>
+#include <hypercalls.h>
 #include <traps.h>
 #include <kernel/printk.h>
 #include <kernel/panic.h>
 #include <kernel/irq.h>
-
-extern shared_info_t xen_shared_info;
-
-#if defined(__i386__)
-#include <xen_hypercall-x86_32.h>
-/*
-#elif defined(__x86_64__)
-#include <hypercall-x86_64.h>
-#elif defined(__arm__) || defined(__aarch64__)
-#include <hypercall-arm.h>
-*/
-#else
-#error "Unsupported architecture"
-#endif
 
 /*
  * These are assembler stubs in entry.S.

@@ -26,4 +26,19 @@ static inline int evtchn_allocate(evtchn_port_t* port, domid_t remote) {
 	return 0;
 }
 
+static inline int evtchn_bind_virq(evtchn_port_t* port, uint32_t virq, uint32_t cpu) {
+	evtchn_bind_virq_t op;
+
+	op.virq = virq;
+	op.vcpu = cpu;
+
+	int err = HYPERVISOR_event_channel_op(EVTCHNOP_bind_virq, &op);
+	if (err < 0) {
+		return err;
+	}
+	*port = op.port;
+
+	return 0;
+}
+
 #endif /* EVTCHN_H_ */

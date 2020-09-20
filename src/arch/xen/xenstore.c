@@ -1,11 +1,9 @@
 
 #include <string.h>
-#include <stdint.h>
 
+#include <xenhelper.h>
 #include <xen/sched.h>
 #include <xen/io/xs_wire.h>
-
-#include <xen_drv.h>
 
 #include <kernel/printk.h>
 #include <embox/unit.h>
