@@ -32,3 +32,13 @@ module event {
 module ipl extends embox.arch.interrupt {
 	source "ipl.c", "ipl.h"
 }
+
+module memory {
+	source "memory.c"
+}
+
+module gnttab {
+	source "gnttab.c"
+
+	depends memory
+}
