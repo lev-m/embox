@@ -1,0 +1,10 @@
+package embox.driver.block
+
+module xen {
+	source "xvbd.c"
+
+	depends embox.driver.block_dev
+
+	option number log_level = 1
+	option number vbd_cnt = 2
+}

@@ -1,0 +1,13 @@
+package embox.cmd.testing
+
+@AutoCmd
+@Cmd(name = "bdevms")
+
+module bdevms {
+	source "block_dev_ms.c"
+
+	depends embox.compat.libc.stdio.printf
+	depends embox.compat.libc.str
+	depends embox.driver.block_dev
+	depends embox.util.pretty_print
+}
