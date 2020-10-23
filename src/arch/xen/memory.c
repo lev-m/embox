@@ -1,4 +1,6 @@
 
+// CherepanovAlexey/xen19
+
 #include <xenhelper.h>
 #include <xen/memory.h>
 #include <xen/version.h>
@@ -90,11 +92,11 @@ static pgentry_t pt_prot[PAGETABLE_LEVELS] = {
 	L3_PROT
 };
 
-page_t* xen_mem_alloc(size_t page_number) {
+void* xen_mem_alloc(size_t page_number) {
 	return page_alloc(__xen_mem_allocator, page_number);
 }
 
-void xen_mem_free(page_t* page, size_t page_number) {
+void xen_mem_free(void* page, size_t page_number) {
 	page_free(__xen_mem_allocator, page, page_number);
 }
 

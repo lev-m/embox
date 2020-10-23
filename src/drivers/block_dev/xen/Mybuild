@@ -4,7 +4,8 @@ module xen {
 	source "xvbd.c"
 
 	depends embox.driver.block_dev
+	depends embox.kernel.timer.sleep_api
+	depends embox.mem.sysmalloc_api
 
 	option number log_level = 1
-	option number vbd_cnt = 2
 }

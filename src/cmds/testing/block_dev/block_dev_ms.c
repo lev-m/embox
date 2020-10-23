@@ -14,71 +14,67 @@
 #include <util/pretty_print.h>
 #include <drivers/block_dev.h>
 
-static long long measure(struct block_dev* dev, size_t blkcnt, size_t block_size) {
-	long long ret;
+struct result {
+	long long blocks_time;
+	long long size_time;
+};
+
+static int measure(struct result* res, struct block_dev* dev, size_t block_size, size_t read_blocks, size_t read_size) {
+	int ret;
 
 	char buffer[block_size];
-	blkno_t all_blkcnt = dev->size / block_size;
+	blkno_t read_size_blocks = read_size / block_size;
 	size_t original_size = dev->block_size;
 	dev->block_size = block_size;
 
-	struct timespec ts1, ts2;
-	clock_gettime(CLOCK_REALTIME, &ts1);
+	struct timespec ts_begin, ts_cnt, ts_size;
+	clock_gettime(CLOCK_REALTIME, &ts_begin);
 	{
-		for (size_t blkno = 0; blkno < blkcnt; blkno++) {
-			if (dev->block_size != dev->driver->read(dev, buffer, dev->block_size, blkno % all_clkcnt)) {
+		blkno_t no = 0;
+
+		for (; no < read_blocks; no++) {
+			if (dev->block_size != dev->driver->read(dev, buffer, block_size, no)) {
 				ret = -1;
 				goto finalize;
 			}
 		}
+		clock_gettime(CLOCK_REALTIME, &ts_cnt);
+
+		for (; no < read_size_blocks; no++) {
+			if (dev->block_size != dev->driver->read(dev, buffer, block_size, no)) {
+				ret = -1;
+				goto finalize;
+			}
+		}
+		clock_gettime(CLOCK_REALTIME, &ts_size);
 	}
-	clock_gettime(CLOCK_REALTIME, &ts2);
-	ret = (ts2.tv_sec - ts1.tv_sec) * 1000 + (ts2.tv_nsec - ts1.tv_nsec) / 1000000;
+	res->blocks_time = (ts_cnt.tv_sec - ts_begin.tv_sec) * 1000 + (ts_cnt.tv_nsec - ts_begin.tv_nsec) / 1000000;
+	res->size_time = (ts_size.tv_sec - ts_begin.tv_sec) * 1000 + (ts_size.tv_nsec - ts_begin.tv_nsec) / 1000000;
+	ret = 0;
 
 finalize:
 	dev->block_size = original_size;
 	return ret;
 }
 
-static void dump_buf(char *buf, size_t cnt, char *fmt) {
-	char msg[256];
-	size_t step = pretty_print_row_len();
-
-	printf("============================\n");
-	printf("%s\n", fmt);
-	printf("============================\n");
-	while (cnt) {
-		pretty_print_row(buf, cnt, msg);
-
-		printf("%s\n", msg);
-
-		if (cnt < step) {
-			cnt = 0;
-		} else {
-			cnt -= step;
-		}
-
-		buf += step;
-	}
-	printf("============================\n");
-}
-
 int main(int argc, char **argv) {
-	int d = open("/dev/xvda", O_RDWR);
-	if (d < 0) {
-		printf("err\n");
-		return -1;
+	struct block_dev* bdev = block_dev_find(argv[1]);
+	if (!bdev) {
+		printf("Block device \"%s\" not found\n", argv[argc - 1]);
+		return -EINVAL;
 	}
 
-	char buffer[512];
+	for (int i = 0; i < 10; i++) {
+		for (size_t size = 1 << 15; size >= 1 << 9; size >>= 1) {
+			struct result res;
+			if (measure(&res, bdev, size, 1 << 10, 1 << 25) != 0) {
+				printf("Error while reading");
+				return -1;
+			}
 
-	//struct block_dev* bdev = block_dev_find("xvda");
-	//bdev->driver->read(bdev, buffer, 512, 0);
-
-	printf("%d\n", read(d, buffer, 512));
-	dump_buf(buffer, sizeof buffer, "Read buffer");
-
-	close(d);
+			printf("%d,%lld,%lld\n", size, res.blocks_time, res.size_time);
+		}
+	}
 
 	return 0;
 }

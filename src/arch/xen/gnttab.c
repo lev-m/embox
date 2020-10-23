@@ -1,21 +1,29 @@
 
+// CherepanovAlexey/xen19
+
 #include <xenhelper.h>
 #include <xen/io/ring.h>
 
 #include <embox/unit.h>
 #include <kernel/printk.h>
+#include <module/embox/arch/libarch.h>
 
 EMBOX_UNIT_INIT(gnttab_init);
 
-static grant_ref_t ref = GNTTAB_NR_RESERVED_ENTRIES;
+static unsigned long ref = GNTTAB_NR_RESERVED_ENTRIES;
 static grant_entry_v1_t *grant_table;
 
 grant_ref_t gnttab_grant_access(domid_t domid, void* frame, bool readonly) {
-	grant_table[ref].frame = virt_to_mfn(frame);
-	grant_table[ref].domid = domid;
+	unsigned long r;
+	do {
+		r = ref;
+	} while (!cas(&ref, r, r + 1));
+
+	grant_table[r].frame = virt_to_mfn(frame);
+	grant_table[r].domid = domid;
 	wmb();
-	grant_table[ref].flags = GTF_permit_access | (GTF_readonly * readonly);
-	return ref++;
+	grant_table[r].flags = GTF_permit_access | (GTF_readonly * readonly);
+	return r;
 }
 
 int get_max_nr_grant_frames() {
@@ -31,7 +39,6 @@ int get_max_nr_grant_frames() {
 
 static int gnttab_init(void) {
 	int frames_cnt = get_max_nr_grant_frames();
-	//size_t entries_cnt = frames_cnt * XEN_PAGE_SIZE / sizeof(grant_entry_v1_t);
 
 	struct gnttab_setup_table setup;
 	setup.dom = DOMID_SELF;
@@ -46,8 +53,7 @@ static int gnttab_init(void) {
 	}
 	unsigned long va = (unsigned long)xen_mem_alloc(frames_cnt);
 
-	int count;    
-	for (count = 0; count < frames_cnt; count++)
+	for (int count = 0; count < frames_cnt; count++)
 	{
 		rc = HYPERVISOR_update_va_mapping(va + count * XEN_PAGE_SIZE,
 				__pte((frames[count]<< XEN_PAGE_SHIFT) | 7),
