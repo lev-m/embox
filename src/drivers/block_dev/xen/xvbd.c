@@ -111,7 +111,7 @@ static void backend_get_pages(struct backend* backend, struct page_info* pages[]
 		} while (!cas(&backend->waiters, waiters, waiters + 1));
 
 		while (true) {
-			WAITQ_WAIT_ONCE(&backend->wait_for_free, SCHED_TIMEOUT_INFINITE);
+			WAITQ_WAIT(&backend->wait_for_free, backend->limit > request_size);
 			for (unsigned long lim = backend->limit; lim > request_size; lim = backend->limit) {
 				if (cas(&backend->limit, lim, lim - request_size)) {
 					break;
@@ -141,11 +141,6 @@ static void backend_get_pages(struct backend* backend, struct page_info* pages[]
 		pages[i] = info;
 	}
 
-	unsigned long lim;
-	do {
-		lim = backend->limit;
-	} while (!cas(&backend->limit, lim, lim + request_size));
-
 	if (is_waiter) {
 		unsigned long waiters;
 		do {
@@ -170,6 +165,11 @@ static void backend_free_pages(struct backend* backend, struct page_info* pages[
 			*link = old;
 		} while (!cas(place, old, value));
 	}
+
+	unsigned long lim;
+	do {
+		lim = backend->limit;
+	} while (!cas(&backend->limit, lim, lim + request_size));
 
 	waitq_wakeup_all(&backend->wait_for_free);
 }
