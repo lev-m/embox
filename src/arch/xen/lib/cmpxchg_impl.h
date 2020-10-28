@@ -11,7 +11,7 @@
 
 #ifndef __ASSEMBLER__
 
-//#define __HAVE_ARCH_CMPXCHG
+#define __HAVE_ARCH_CMPXCHG
 
 static inline unsigned long cmpxchg(unsigned long *ptr,
 		unsigned long old_val, unsigned long new_val) {
