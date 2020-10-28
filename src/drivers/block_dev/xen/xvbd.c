@@ -26,6 +26,8 @@
 #include <util/slist.h>
 
 #define XVBD_DEFAULT_BLOCK_SIZE 512
+#define MAX_WAIT_COUNT 10
+#define BACKEND_PAGES_LIMIT 128
 
 struct page_info {
 	unsigned long* page;
@@ -40,7 +42,7 @@ struct request {
 struct xvbd_ring {
 	struct blkif_front_ring ring;
 	grant_ref_t gref;
-	unsigned long user;
+	struct mutex lock;
 };
 
 struct backend {
@@ -84,7 +86,7 @@ static struct backend* backend_get(domid_t id) {
 	backend = sysmalloc(sizeof(backend));
 	backend->id = id;
 	backend->link = backends;
-	backend->limit = 64;
+	backend->limit = BACKEND_PAGES_LIMIT;
 	backend->free_pages = NULL;
 	backend->waiters = 0;
 	waitq_init(&backend->wait_for_free);
@@ -97,9 +99,14 @@ static void backend_get_pages(struct backend* backend, struct page_info* pages[]
 	WAITQ_WAIT(&backend->wait_for_enter, backend->waiters == 0);
 
 	bool is_waiter = true;
+	int wait_count = 0;
 	for (unsigned long lim = backend->limit; lim > request_size; lim = backend->limit) {
 		if (cas(&backend->limit, lim, lim - request_size)) {
 			is_waiter = false;
+			break;
+		}
+		wait_count += 1;
+		if (wait_count == MAX_WAIT_COUNT) {
 			break;
 		}
 	}
@@ -154,17 +161,18 @@ static void backend_get_pages(struct backend* backend, struct page_info* pages[]
 }
 
 static void backend_free_pages(struct backend* backend, struct page_info* pages[], int request_size) {
-	unsigned long* place = (unsigned long*) &backend->free_pages;
-	for (int i = 0; i < request_size; i++) {
-		struct page_info* info = pages[i];
-		unsigned long* link = info->page;
-		unsigned long value = (unsigned long) pages[i];
-		unsigned long old;
-		do {
-			old = *place;
-			*link = old;
-		} while (!cas(place, old, value));
+	for (int i = 1; i < request_size; i++) {
+		*pages[i - 1]->page = (unsigned long)pages[i];
 	}
+
+	unsigned long* place = (unsigned long*) &backend->free_pages;
+	unsigned long* link = pages[request_size - 1]->page;
+	unsigned long value = (unsigned long) pages[0];
+	unsigned long old;
+	do {
+		old = *place;
+		*link = old;
+	} while (!cas(place, old, value));
 
 	unsigned long lim;
 	do {
@@ -209,7 +217,7 @@ static int xvbd_init(struct xvbd* xvbd) {
 		FRONT_RING_INIT(&xvbd->ring.ring, shared_ring, XEN_PAGE_SIZE);
 
 		xvbd->ring.gref = gnttab_grant_access(xvbd->backend->id, shared_ring, false);
-		xvbd->ring.user = 0;
+		mutex_init(&xvbd->ring.lock);
 	}
 
 	{
@@ -405,11 +413,7 @@ static int xvbd_do(struct block_dev *dev, char *buffer, size_t count,
 	request.status = 1;
 	waitq_init(&request.waitq);
 
-	unsigned long user = (unsigned long)&request;
-	while (!cas(&xvbd->ring.user, 0, user)) {
-		// DO NOTHING
-	}
-
+	mutex_lock(&xvbd->ring.lock);
 	{
 		RING_IDX idx = xvbd->ring.ring.req_prod_pvt++;
 		struct blkif_request* ring_request = RING_GET_REQUEST(&xvbd->ring.ring, idx);
@@ -418,7 +422,7 @@ static int xvbd_do(struct block_dev *dev, char *buffer, size_t count,
 		ring_request->nr_segments = pages_cnt;
 		ring_request->handle = xvbd->id;
 		ring_request->sector_number = blkno * dev->block_size / xvbd->block_size;
-		ring_request->id = (uint64_t)user;
+		ring_request->id = (uint64_t)(uintptr_t)&request;
 
 		uint8_t last_sect = (XEN_PAGE_SIZE - 1) / xvbd->block_size;
 
@@ -438,9 +442,9 @@ static int xvbd_do(struct block_dev *dev, char *buffer, size_t count,
 			evtchn_notify_remote(xvbd->port);
 		}
 	}
-	xvbd->ring.user = 0;
+	mutex_unlock(&xvbd->ring.lock);
 
-	WAITQ_WAIT_ONCE(&request.waitq, SCHED_TIMEOUT_INFINITE);
+	WAITQ_WAIT(&request.waitq, request.status <= 0);
 
 	int ret = request.status;
 	if (ret == 0) {
@@ -479,7 +483,7 @@ static irq_return_t xvbd_irq_handler(unsigned int irq_nr, void *data) {
 		RING_IDX consumed_cnt = ring->ring.rsp_cons++;
 
 		struct blkif_response* response = RING_GET_RESPONSE(&ring->ring, consumed_cnt);
-		struct request* request = (struct request*)(unsigned long)response->id;
+		struct request* request = (struct request*)(uintptr_t)response->id;
 		request->status = response->status;
 
 		waitq_wakeup_all(&request->waitq);
