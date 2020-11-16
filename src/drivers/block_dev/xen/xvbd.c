@@ -39,6 +39,7 @@ struct xvbd_ring {
 	struct blkif_front_ring ring;
 	grant_ref_t gref;
 	struct mutex lock;
+	struct waitq waitq;
 };
 
 struct pool {
@@ -181,6 +182,7 @@ static int xvbd_init(struct xvbd* xvbd) {
 
 		xvbd->ring.gref = gnttab_grant_access(xvbd->backend->id, shared_ring, false);
 		mutex_init(&xvbd->ring.lock);
+		waitq_init(&xvbd->ring.waitq);
 	}
 
 	{
@@ -368,6 +370,8 @@ static int xvbd_do(struct block_dev *dev, char *buffer, size_t count,
 
 	mutex_lock(&xvbd->ring.lock);
 	{
+		WAITQ_WAIT(&xvbd->ring.waitq, RING_FREE_REQUESTS(&xvbd->ring.ring) > 0);
+
 		RING_IDX idx = xvbd->ring.ring.req_prod_pvt++;
 		struct blkif_request* ring_request = RING_GET_REQUEST(&xvbd->ring.ring, idx);
 
